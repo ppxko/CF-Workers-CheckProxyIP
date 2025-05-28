@@ -1,19 +1,19 @@
-import { connect } from "cloudflare:sockets";
+// File: _worker.js (for Cloudflare Pages Functions)
 
-export default {
-  async fetch(request, env, ctx) {
-    const { searchParams } = new URL(request.url);
-    const domain = searchParams.get("proxyip");
+export async function onRequest(context) {
+  const { request } = context;
+  const url = new URL(request.url);
+  const domain = url.searchParams.get("proxyip");
 
-    if (!domain) {
-      return new Response(JSON.stringify({ error: "Missing ?proxyip=" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+  if (!domain) {
+    return new Response("Missing 'proxyip' parameter", {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
-    // 查询 A / AAAA 记录
-    const [ipv4Resp, ipv6Resp] = await Promise.all([
+  const resolveDomain = async (domain) => {
+    const [ipv4Response, ipv6Response] = await Promise.all([
       fetch(`https://1.1.1.1/dns-query?name=${domain}&type=A`, {
         headers: { Accept: "application/dns-json" },
       }),
@@ -23,56 +23,46 @@ export default {
     ]);
 
     const [ipv4Data, ipv6Data] = await Promise.all([
-      ipv4Resp.json(),
-      ipv6Resp.json(),
+      ipv4Response.json(),
+      ipv6Response.json(),
     ]);
 
     const ips = [];
 
-    if (ipv4Data?.Answer) {
-      for (const a of ipv4Data.Answer) {
-        if (a.type === 1) ips.push(a.data); // A记录
-      }
+    if (ipv4Data.Answer) {
+      const ipv4Addresses = ipv4Data.Answer.filter((r) => r.type === 1).map((r) => r.data);
+      ips.push(...ipv4Addresses);
     }
 
-    if (ipv6Data?.Answer) {
-      for (const a of ipv6Data.Answer) {
-        if (a.type === 28) ips.push(a.data); // AAAA记录
-      }
+    if (ipv6Data.Answer) {
+      const ipv6Addresses = ipv6Data.Answer.filter((r) => r.type === 28).map((r) => `[${r.data}]`);
+      ips.push(...ipv6Addresses);
     }
 
-    if (ips.length === 0) {
-      return new Response(JSON.stringify({ error: "No IPs resolved" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    return ips;
+  };
 
-    // 批量检测每个 IP:port，默认端口为 443
-const results = await Promise.all(
-  ips.map(async (ip) => {
-    const proxyIP = ip;
-    const portRemote = 443;
-    const url = `https://${ip}`;
+  const checkProxyIP = async (ip, domain) => {
     const now = new Date().toISOString();
+    const targetURL = `https://${ip}`;
 
     try {
-      const res = await fetch(url, {
+      const res = await fetch(targetURL, {
         method: "GET",
         headers: {
-          "Host": domain,
+          Host: domain,
           "User-Agent": "Mozilla/5.0 (checkproxy)",
         },
         redirect: "manual",
       });
 
       const text = await res.text();
-      const isSuccess = res.ok && res.status >= 200 && res.status < 300;
+      const success = res.status >= 200 && res.status < 300;
 
       return {
-        success: isSuccess,
-        proxyIP,
-        portRemote,
+        success,
+        proxyIP: ip,
+        portRemote: 443,
         statusCode: res.status,
         responseSize: text.length,
         responseData: text.slice(0, 512),
@@ -81,20 +71,30 @@ const results = await Promise.all(
     } catch (err) {
       return {
         success: false,
-        proxyIP,
-        portRemote,
+        proxyIP: ip,
+        portRemote: 443,
         statusCode: null,
         responseSize: 0,
         responseData: "",
         timestamp: now,
       };
     }
-  })
-);
+  };
 
+  try {
+    const ipList = await resolveDomain(domain);
+    const results = await Promise.all(ipList.map((ip) => checkProxyIP(ip, domain)));
 
     return new Response(JSON.stringify(results, null, 2), {
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ success: false, error: e.message }), {
+      status: 500,
       headers: { "Content-Type": "application/json" },
     });
-  },
-};
+  }
+}
