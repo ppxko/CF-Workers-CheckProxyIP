@@ -198,7 +198,7 @@ async function CheckProxyIP(proxyIP) {
     const httpRequest =
       "GET /cdn-cgi/trace HTTP/1.1\r\n" +
       "Host: speed.cloudflare.com\r\n" +
-      "User-Agent: CheckProxyIP/cmliu\r\n" +
+      "User-Agent: CheckProxyIP/ppxko\r\n" +
       "Connection: close\r\n\r\n";
 
     // 发送HTTP请求
