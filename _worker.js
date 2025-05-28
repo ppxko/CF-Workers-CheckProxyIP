@@ -25,6 +25,44 @@ export default {
           "Access-Control-Allow-Origin": "*"
         }
       });
+      } else if (path.toLowerCase() === '/check-domain') {
+  const domain = url.searchParams.get('domain');
+  if (!domain) {
+    return new Response('Missing domain parameter', { status: 400 });
+  }
+
+  try {
+    const ips = await resolveDomain(domain);
+    const results = await Promise.all(
+      ips.map(async (ip) => {
+        const fullAddress = ip.includes(':') ? `[${ip}]:443` : `${ip}:443`;
+        const result = await CheckProxyIP(fullAddress);
+        result.ip = ip;
+        return result;
+      })
+    );
+
+    return new Response(JSON.stringify({
+      domain,
+      count: results.length,
+      results
+    }, null, 2), {
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      }
+    });
+  }
+}
+
     } else if (path.toLowerCase() === '/resolve') {
       if (!url.searchParams.has('domain')) return new Response('Missing domain parameter', { status: 400 });
       const domain = url.searchParams.get('domain');
