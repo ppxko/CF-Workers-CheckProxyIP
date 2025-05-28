@@ -49,47 +49,49 @@ export default {
     }
 
     // 批量检测每个 IP:port，默认端口为 443
-    const results = await Promise.all(
-      ips.map(async (ip) => {
-        const proxyIP = ip;
-        const portRemote = 443;
-        const url = `https://${ip}`;
-        const now = new Date().toISOString();
+const results = await Promise.all(
+  ips.map(async (ip) => {
+    const proxyIP = ip;
+    const portRemote = 443;
+    const url = `https://${ip}`;
+    const now = new Date().toISOString();
 
-        try {
-          const res = await fetch(url, {
-            method: "GET",
-            headers: {
-              "Host": domain, // SNI / HTTP Host
-              "User-Agent": "Mozilla/5.0 (checkproxy)",
-            },
-            redirect: "manual",
-          });
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Host": domain,
+          "User-Agent": "Mozilla/5.0 (checkproxy)",
+        },
+        redirect: "manual",
+      });
 
-          const text = await res.text();
+      const text = await res.text();
+      const isSuccess = res.ok && res.status >= 200 && res.status < 300;
 
-          return {
-            success: true,
-            proxyIP,
-            portRemote,
-            statusCode: res.status,
-            responseSize: text.length,
-            responseData: text.slice(0, 512), // 避免过大
-            timestamp: now,
-          };
-        } catch (err) {
-          return {
-            success: false,
-            proxyIP,
-            portRemote,
-            statusCode: null,
-            responseSize: 0,
-            responseData: "",
-            timestamp: now,
-          };
-        }
-      })
-    );
+      return {
+        success: isSuccess,
+        proxyIP,
+        portRemote,
+        statusCode: res.status,
+        responseSize: text.length,
+        responseData: text.slice(0, 512),
+        timestamp: now,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        proxyIP,
+        portRemote,
+        statusCode: null,
+        responseSize: 0,
+        responseData: "",
+        timestamp: now,
+      };
+    }
+  })
+);
+
 
     return new Response(JSON.stringify(results, null, 2), {
       headers: { "Content-Type": "application/json" },
