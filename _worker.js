@@ -61,7 +61,6 @@ export default {
       }
     });
   }
-}
 
     } else if (path.toLowerCase() === '/resolve') {
       if (!url.searchParams.has('domain')) return new Response('Missing domain parameter', { status: 400 });
